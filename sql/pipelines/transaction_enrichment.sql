@@ -1,58 +1,60 @@
 -- =============================================================
 -- SLS-2: Automated Loan Policy Violation Detection
--- Creates a stored procedure for the Cortex Agent to flag
--- applications that violate lending policy, plus a Task
--- to auto-detect LTV violations on new applications.
--- Status: IN PROGRESS — auto-detection task TODO
+-- Creates a Stream on LOAN_APPLICATIONS plus a scheduled Task
+-- to auto-detect LTV violations and flag them via
+-- FLAG_APPLICATION_EXCEPTION.
 -- =============================================================
 
+USE ROLE MORTGAGE_AGENT_ADMIN;
 USE DATABASE MORTGAGE_DEMO_DB;
 USE SCHEMA MORTGAGE_DEMO;
+USE WAREHOUSE MORTGAGE_WH;
 
--- Exception logs table (audit trail for agent actions)
-CREATE TABLE IF NOT EXISTS EXCEPTION_LOGS (
-    LOG_ID              VARCHAR(36)   PRIMARY KEY,
-    APPLICATION_ID      VARCHAR(20)   NOT NULL,
-    FLAG_REASON         VARCHAR(2000) NOT NULL,
-    TIMESTAMP           TIMESTAMP_NTZ NOT NULL DEFAULT CURRENT_TIMESTAMP()
-);
+-- Stream to capture new/changed rows in LOAN_APPLICATIONS
+CREATE OR REPLACE STREAM LOAN_APPLICATIONS_STREAM
+    ON TABLE LOAN_APPLICATIONS
+    APPEND_ONLY = FALSE
+    SHOW_INITIAL_ROWS = TRUE;
 
--- Stored procedure: Agent action tool to flag an application
-CREATE OR REPLACE PROCEDURE FLAG_APPLICATION_EXCEPTION(application_id VARCHAR, reason VARCHAR)
+-- Procedure to iterate stream violations and flag each one
+CREATE OR REPLACE PROCEDURE DETECT_LTV_VIOLATIONS()
 RETURNS VARCHAR
-LANGUAGE PYTHON
-RUNTIME_VERSION = '3.11'
-PACKAGES = ('snowflake-snowpark-python')
-HANDLER = 'main'
+LANGUAGE SQL
 EXECUTE AS CALLER
 AS
-$$
-def main(session, application_id: str, reason: str) -> str:
-    check = session.sql(
-        "SELECT COUNT(*) AS CNT FROM MORTGAGE_DEMO_DB.MORTGAGE_DEMO.LOAN_APPLICATIONS WHERE APPLICATION_ID = ?",
-        params=[application_id]
-    ).collect()
+BEGIN
+    LET violations_cursor CURSOR FOR
+        SELECT APPLICATION_ID,
+               ROUND(LOAN_AMOUNT / NULLIF(PROPERTY_VALUE, 0) * 100, 2) AS LTV_RATIO
+        FROM LOAN_APPLICATIONS_STREAM
+        WHERE METADATA$ACTION = 'INSERT'
+          AND STATUS = 'Pending'
+          AND PROPERTY_VALUE > 0
+          AND ROUND(LOAN_AMOUNT / NULLIF(PROPERTY_VALUE, 0) * 100, 2) > 90;
 
-    if check[0]['CNT'] == 0:
-        return f"Error: Application {application_id} not found in LOAN_APPLICATIONS."
+    LET flagged_count INTEGER := 0;
+    LET app_id VARCHAR;
+    LET ltv_val NUMBER(10,2);
+    LET flag_reason VARCHAR;
 
-    session.sql(
-        "UPDATE MORTGAGE_DEMO_DB.MORTGAGE_DEMO.LOAN_APPLICATIONS SET STATUS = 'Exception Review' WHERE APPLICATION_ID = ?",
-        params=[application_id]
-    ).collect()
+    FOR rec IN violations_cursor DO
+        app_id := rec.APPLICATION_ID;
+        ltv_val := rec.LTV_RATIO;
+        flag_reason := 'Auto-detected LTV violation: LTV ratio ' || :ltv_val || '% exceeds 90% policy limit';
+        CALL FLAG_APPLICATION_EXCEPTION(:app_id, :flag_reason);
+        flagged_count := flagged_count + 1;
+    END FOR;
 
-    session.sql(
-        "INSERT INTO MORTGAGE_DEMO_DB.MORTGAGE_DEMO.EXCEPTION_LOGS (LOG_ID, APPLICATION_ID, FLAG_REASON, TIMESTAMP) "
-        "SELECT UUID_STRING(), ?, ?, CURRENT_TIMESTAMP() FROM TABLE(GENERATOR(ROWCOUNT => 1))",
-        params=[application_id, reason]
-    ).collect()
+    RETURN 'LTV violation scan complete. Flagged ' || :flagged_count || ' application(s).';
+END;
 
-    return f"Application {application_id} successfully flagged for exception review. Reason: {reason}"
-$$;
+-- Scheduled task: runs every 5 minutes when stream has data
+CREATE OR REPLACE TASK DETECT_LTV_VIOLATIONS_TASK
+    WAREHOUSE = MORTGAGE_WH
+    SCHEDULE  = 'USING CRON */5 * * * * Pacific/Auckland'
+    WHEN SYSTEM$STREAM_HAS_DATA('MORTGAGE_DEMO_DB.MORTGAGE_DEMO.LOAN_APPLICATIONS_STREAM')
+AS
+    CALL DETECT_LTV_VIOLATIONS();
 
--- TODO: Create a Task that runs every 5 minutes to auto-detect policy violations:
---   - Check all Pending applications where LTV_RATIO > 90%
---     (LOAN_AMOUNT / PROPERTY_VALUE * 100 > 90)
---   - For each violation, call FLAG_APPLICATION_EXCEPTION with reason
---   - Use a Stream on LOAN_APPLICATIONS to only process new/changed rows
---   - Schedule: USING CRON */5 * * * * Pacific/Auckland
+-- Enable the task (tasks are created in suspended state)
+ALTER TASK DETECT_LTV_VIOLATIONS_TASK RESUME;
