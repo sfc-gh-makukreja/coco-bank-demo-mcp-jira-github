@@ -1,6 +1,6 @@
 # Snowflake Intelligence: Mortgage Underwriting Assistant Specification
 
-Version: 1.0
+Version: 1.1
 
 Purpose: Define the architecture, data models, and agent orchestration for a Snowflake Intelligence demonstration that automates mortgage loan assessments.
 
@@ -52,6 +52,13 @@ This project solves this operational bottleneck by leveraging Snowflake Intellig
 5. **Custom Action** — `FLAG_APPLICATION_EXCEPTION` stored procedure allowing the agent to flag applications that violate lending policy.
 
 6. **Agent** — `MORTGAGE_UNDERWRITING_ASSISTANT` orchestrating all tools under a strict system prompt that enforces policy-based assessment workflow.
+
+7. **Document Stage** — `MORTGAGE_DOCS_STAGE` internal stage with directory table enabled, used to stage lending policy PDFs before parsing with `AI_PARSE_DOCUMENT`.
+
+8. **Automated Violation Detection (SLS-2)** — A stream/task pipeline that auto-detects LTV policy violations on new loan applications:
+   * `LOAN_APPLICATIONS_STREAM` — Standard stream on `LOAN_APPLICATIONS` (captures inserts and updates, includes initial rows).
+   * `DETECT_LTV_VIOLATIONS` — SQL stored procedure that iterates the stream for Pending applications with LTV > 90% and flags each via `FLAG_APPLICATION_EXCEPTION`.
+   * `DETECT_LTV_VIOLATIONS_TASK` — Scheduled task running every 5 minutes (`CRON */5 * * * * Pacific/Auckland`) with `SYSTEM$STREAM_HAS_DATA` guard. Uses `MORTGAGE_WH`.
 
 ## 4. Core Domain Model
 
