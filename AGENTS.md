@@ -9,7 +9,7 @@ SI delivery project: a mortgage underwriting data platform on Snowflake with a C
 - **Database:** `MORTGAGE_DEMO_DB.MORTGAGE_DEMO`
 - **Warehouse:** `MORTGAGE_WH` (XSMALL, auto-suspend 60s)
 - **Admin role:** `MORTGAGE_AGENT_ADMIN`
-- **User role:** `MORTGAGE_USER_ROLE` (read-only)
+- **User role:** `MORTGAGE_AGENT_USER` (read-only)
 - **Jira project:** coco-bank-demo-mcp-jira-github ([board](https://snowflakecomputing.atlassian.net/jira/software/c/projects/SLS/boards/8203))
 - **GitHub repo:** `coco-bank-demo-mcp-jira-github`
 
