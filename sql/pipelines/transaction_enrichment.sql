@@ -1,62 +1,58 @@
 -- =============================================================
--- SLS-2: Real-time Transaction Enrichment Pipeline
--- Streams & Tasks to enrich raw transactions with customer
--- and merchant reference data
--- Status: IN PROGRESS — enrichment logic TODO
+-- SLS-2: Automated Loan Policy Violation Detection
+-- Creates a stored procedure for the Cortex Agent to flag
+-- applications that violate lending policy, plus a Task
+-- to auto-detect LTV violations on new applications.
+-- Status: IN PROGRESS — auto-detection task TODO
 -- =============================================================
 
-USE DATABASE ANZ_BANKING;
-USE SCHEMA PAYMENTS;
+USE DATABASE MORTGAGE_DEMO_DB;
+USE SCHEMA MORTGAGE_DEMO;
 
--- Source table: raw transactions landing from core banking
-CREATE TABLE IF NOT EXISTS RAW_TRANSACTIONS (
-    TRANSACTION_ID      VARCHAR(36)     NOT NULL,
-    ACCOUNT_ID          VARCHAR(20)     NOT NULL,
-    MERCHANT_ID         VARCHAR(20),
-    AMOUNT              NUMBER(18,2)    NOT NULL,
-    CURRENCY            VARCHAR(3)      DEFAULT 'NZD',
-    TRANSACTION_TYPE    VARCHAR(20),
-    TRANSACTION_TS      TIMESTAMP_NTZ   NOT NULL,
-    CHANNEL             VARCHAR(20),
-    STATUS              VARCHAR(10)     DEFAULT 'PENDING',
-    RAW_PAYLOAD         VARIANT,
-    INGESTED_AT         TIMESTAMP_NTZ   DEFAULT CURRENT_TIMESTAMP()
+-- Exception logs table (audit trail for agent actions)
+CREATE TABLE IF NOT EXISTS EXCEPTION_LOGS (
+    LOG_ID              VARCHAR(36)   PRIMARY KEY,
+    APPLICATION_ID      VARCHAR(20)   NOT NULL,
+    FLAG_REASON         VARCHAR(2000) NOT NULL,
+    TIMESTAMP           TIMESTAMP_NTZ NOT NULL DEFAULT CURRENT_TIMESTAMP()
 );
 
--- Stream to capture new/changed rows
-CREATE STREAM IF NOT EXISTS RAW_TRANSACTIONS_STREAM
-    ON TABLE RAW_TRANSACTIONS
-    APPEND_ONLY = TRUE;
-
--- Target enriched table
-CREATE TABLE IF NOT EXISTS ENRICHED_TRANSACTIONS (
-    TRANSACTION_ID      VARCHAR(36)     NOT NULL,
-    ACCOUNT_ID          VARCHAR(20)     NOT NULL,
-    CUSTOMER_NAME       VARCHAR(100),
-    CUSTOMER_SEGMENT    VARCHAR(20),
-    MERCHANT_ID         VARCHAR(20),
-    MERCHANT_NAME       VARCHAR(100),
-    MERCHANT_CATEGORY   VARCHAR(50),
-    AMOUNT              NUMBER(18,2)    NOT NULL,
-    AMOUNT_NZD          NUMBER(18,2),
-    CURRENCY            VARCHAR(3),
-    TRANSACTION_TYPE    VARCHAR(20),
-    TRANSACTION_TS      TIMESTAMP_NTZ   NOT NULL,
-    CHANNEL             VARCHAR(20),
-    IS_INTERNATIONAL    BOOLEAN         DEFAULT FALSE,
-    RISK_SCORE          NUMBER(5,2),
-    ENRICHED_AT         TIMESTAMP_NTZ   DEFAULT CURRENT_TIMESTAMP()
-);
-
--- TODO: Task to process stream every minute
--- Needs to JOIN with DIM_CUSTOMER and DIM_MERCHANT
--- and calculate AMOUNT_NZD via FX_RATES table
-CREATE OR REPLACE TASK ENRICH_TRANSACTIONS_TASK
-    WAREHOUSE = BANKING_WH
-    SCHEDULE = '1 MINUTE'
-    WHEN SYSTEM$STREAM_HAS_DATA('RAW_TRANSACTIONS_STREAM')
+-- Stored procedure: Agent action tool to flag an application
+CREATE OR REPLACE PROCEDURE FLAG_APPLICATION_EXCEPTION(application_id VARCHAR, reason VARCHAR)
+RETURNS VARCHAR
+LANGUAGE PYTHON
+RUNTIME_VERSION = '3.11'
+PACKAGES = ('snowflake-snowpark-python')
+HANDLER = 'main'
+EXECUTE AS CALLER
 AS
-    -- TODO: implement enrichment logic
-    SELECT 1;
+$$
+def main(session, application_id: str, reason: str) -> str:
+    check = session.sql(
+        "SELECT COUNT(*) AS CNT FROM MORTGAGE_DEMO_DB.MORTGAGE_DEMO.LOAN_APPLICATIONS WHERE APPLICATION_ID = ?",
+        params=[application_id]
+    ).collect()
 
-ALTER TASK ENRICH_TRANSACTIONS_TASK RESUME;
+    if check[0]['CNT'] == 0:
+        return f"Error: Application {application_id} not found in LOAN_APPLICATIONS."
+
+    session.sql(
+        "UPDATE MORTGAGE_DEMO_DB.MORTGAGE_DEMO.LOAN_APPLICATIONS SET STATUS = 'Exception Review' WHERE APPLICATION_ID = ?",
+        params=[application_id]
+    ).collect()
+
+    session.sql(
+        "INSERT INTO MORTGAGE_DEMO_DB.MORTGAGE_DEMO.EXCEPTION_LOGS (LOG_ID, APPLICATION_ID, FLAG_REASON, TIMESTAMP) "
+        "SELECT UUID_STRING(), ?, ?, CURRENT_TIMESTAMP() FROM TABLE(GENERATOR(ROWCOUNT => 1))",
+        params=[application_id, reason]
+    ).collect()
+
+    return f"Application {application_id} successfully flagged for exception review. Reason: {reason}"
+$$;
+
+-- TODO: Create a Task that runs every 5 minutes to auto-detect policy violations:
+--   - Check all Pending applications where LTV_RATIO > 90%
+--     (LOAN_AMOUNT / PROPERTY_VALUE * 100 > 90)
+--   - For each violation, call FLAG_APPLICATION_EXCEPTION with reason
+--   - Use a Stream on LOAN_APPLICATIONS to only process new/changed rows
+--   - Schedule: USING CRON */5 * * * * Pacific/Auckland
