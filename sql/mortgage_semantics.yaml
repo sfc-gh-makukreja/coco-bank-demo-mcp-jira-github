@@ -1,0 +1,200 @@
+name: mortgage_semantics
+tables:
+  - name: applicant_profiles
+    base_table:
+      database: MORTGAGE_DEMO_DB
+      schema: MORTGAGE_DEMO
+      table: APPLICANT_PROFILES
+    primary_key:
+      columns:
+        - APPLICANT_ID
+    dimensions:
+      - name: APPLICANT_ID
+        expr: APPLICANT_ID
+        data_type: VARCHAR
+        description: Unique identifier for the applicant
+        synonyms:
+          - "applicant identifier"
+          - "applicant number"
+      - name: FULL_NAME
+        expr: FULL_NAME
+        data_type: VARCHAR
+        description: Full name of the applicant
+        synonyms:
+          - "name"
+          - "applicant name"
+          - "borrower name"
+      - name: EMPLOYMENT_TYPE
+        expr: EMPLOYMENT_TYPE
+        data_type: VARCHAR
+        description: Employment type of the applicant - either PAYG or Self-Employed
+        synonyms:
+          - "job type"
+          - "employment status"
+          - "work type"
+        sample_values:
+          - "PAYG"
+          - "Self-Employed"
+    facts:
+      - name: ANNUAL_INCOME
+        expr: ANNUAL_INCOME
+        data_type: NUMBER
+        description: Annual income of the applicant in dollars
+        synonyms:
+          - "income"
+          - "yearly income"
+          - "salary"
+      - name: CREDIT_SCORE
+        expr: CREDIT_SCORE
+        data_type: NUMBER
+        description: Credit score of the applicant (range 300-850)
+        synonyms:
+          - "FICO"
+          - "credit rating"
+          - "FICO score"
+      - name: MONTHLY_DEBT_OBLIGATIONS
+        expr: MONTHLY_DEBT_OBLIGATIONS
+        data_type: NUMBER
+        description: Monthly debt obligations of the applicant in dollars
+        synonyms:
+          - "monthly debt"
+          - "debt payments"
+          - "monthly obligations"
+    metrics:
+      - name: AVG_CREDIT_SCORE
+        expr: AVG(CREDIT_SCORE)
+        description: Average credit score across applicants
+        synonyms:
+          - "average FICO"
+          - "mean credit score"
+      - name: AVG_ANNUAL_INCOME
+        expr: AVG(ANNUAL_INCOME)
+        description: Average annual income across applicants
+        synonyms:
+          - "average income"
+          - "mean salary"
+      - name: APPLICANT_COUNT
+        expr: COUNT(DISTINCT APPLICANT_ID)
+        description: Total number of unique applicants
+        synonyms:
+          - "number of applicants"
+          - "total applicants"
+
+  - name: loan_applications
+    base_table:
+      database: MORTGAGE_DEMO_DB
+      schema: MORTGAGE_DEMO
+      table: LOAN_APPLICATIONS
+    primary_key:
+      columns:
+        - APPLICATION_ID
+    dimensions:
+      - name: APPLICATION_ID
+        expr: APPLICATION_ID
+        data_type: VARCHAR
+        description: Unique identifier for the loan application
+        synonyms:
+          - "application number"
+          - "loan ID"
+          - "app ID"
+      - name: APPLICANT_ID
+        expr: APPLICANT_ID
+        data_type: VARCHAR
+        description: Foreign key linking to the applicant profile
+      - name: LOAN_PURPOSE
+        expr: LOAN_PURPOSE
+        data_type: VARCHAR
+        description: Purpose of the loan - either Owner-Occupier or Investment
+        synonyms:
+          - "purpose"
+          - "loan type"
+          - "property purpose"
+        sample_values:
+          - "Owner-Occupier"
+          - "Investment"
+      - name: STATUS
+        expr: STATUS
+        data_type: VARCHAR
+        description: Current status of the loan application
+        synonyms:
+          - "application status"
+          - "loan status"
+        sample_values:
+          - "Pending"
+          - "Approved"
+          - "Declined"
+          - "Exception Review"
+      - name: LTV_RATIO
+        expr: ROUND(LOAN_AMOUNT / NULLIF(PROPERTY_VALUE, 0) * 100, 2)
+        data_type: NUMBER
+        description: Loan-to-Value ratio as a percentage, calculated as (Loan Amount / Property Value) * 100
+        synonyms:
+          - "LTV"
+          - "loan to value"
+          - "loan to value ratio"
+      - name: DTI_RATIO
+        expr: ROUND((applicant_profiles.MONTHLY_DEBT_OBLIGATIONS * 12) / NULLIF(applicant_profiles.ANNUAL_INCOME, 0) * 100, 2)
+        data_type: NUMBER
+        description: Debt-to-Income ratio as a percentage, calculated as (Monthly Debt Obligations * 12) / Annual Income * 100
+        synonyms:
+          - "DTI"
+          - "debt to income"
+          - "debt to income ratio"
+    facts:
+      - name: LOAN_AMOUNT
+        expr: LOAN_AMOUNT
+        data_type: NUMBER
+        description: Requested loan amount in dollars
+        synonyms:
+          - "loan value"
+          - "principal"
+          - "requested amount"
+      - name: PROPERTY_VALUE
+        expr: PROPERTY_VALUE
+        data_type: NUMBER
+        description: Assessed property value in dollars
+        synonyms:
+          - "property price"
+          - "collateral value"
+          - "house value"
+    metrics:
+      - name: APPLICATION_COUNT
+        expr: COUNT(DISTINCT APPLICATION_ID)
+        description: Total number of loan applications
+        synonyms:
+          - "number of applications"
+          - "total applications"
+          - "how many applications"
+      - name: AVG_LOAN_AMOUNT
+        expr: AVG(LOAN_AMOUNT)
+        description: Average loan amount across applications
+        synonyms:
+          - "average loan"
+          - "mean loan amount"
+      - name: AVG_LTV_RATIO
+        expr: AVG(ROUND(LOAN_AMOUNT / NULLIF(PROPERTY_VALUE, 0) * 100, 2))
+        description: Average LTV ratio across applications
+        synonyms:
+          - "average LTV"
+          - "mean loan to value"
+      - name: TOTAL_LOAN_AMOUNT
+        expr: SUM(LOAN_AMOUNT)
+        description: Total loan amount across all applications
+        synonyms:
+          - "total lending"
+          - "sum of loans"
+      - name: PENDING_COUNT
+        expr: "COUNT(DISTINCT CASE WHEN STATUS = 'Pending' THEN APPLICATION_ID END)"
+        description: Number of pending loan applications
+        synonyms:
+          - "pending applications"
+          - "how many pending"
+
+relationships:
+  - name: loan_to_applicant
+    left_table: loan_applications
+    right_table: applicant_profiles
+    relationship_columns:
+      - left_column: APPLICANT_ID
+        right_column: APPLICANT_ID
+    relationship_type: many_to_one
