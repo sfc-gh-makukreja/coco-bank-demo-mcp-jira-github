@@ -84,6 +84,9 @@ scripts/
 - `snow` CLI installed and configured
 - Connection name: `admin` (default) — set via `SNOWFLAKE_CONNECTION_NAME` env var
 
+### Cortex Code
+- When developing using Cortex Code use SNOWFLAKE_SQL_EXECUTE tool
+
 ### Deployment
 ```bash
 # Full platform setup (run numbered scripts in order)
@@ -127,3 +130,4 @@ snow sql -c admin -f sql/08_teardown.sql
 - Branch per Jira ticket (e.g., `sls-2-violation-detection`)
 - Commit messages reference the Jira ticket key (e.g., `SLS-2: Add violation detection task`)
 - Keep SQL files idempotent — safe to re-run
+- Bump the version of SPEC.md as you start to add new features
