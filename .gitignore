@@ -1,0 +1,10 @@
+.env
+*.credentials
+connections.toml
+.snowflake/
+__pycache__/
+*.pyc
+.DS_Store
+dbt_packages/
+target/
+logs/
