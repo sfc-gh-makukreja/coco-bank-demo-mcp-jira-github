@@ -12,13 +12,7 @@ Migrating core banking data workloads to Snowflake, enabling real-time transacti
 
 ## Sprint Board
 
-| Ticket | Task | Status |
-|--------|------|--------|
-| SLS-2 | Build real-time transaction enrichment pipeline using Streams & Tasks | 🔄 In Progress |
-| SLS-3 | Implement dynamic data masking for customer PII fields | 📋 Backlog |
-| SLS-4 | Create AML suspicious activity detection view | 📋 Backlog |
-| SLS-5 | Optimise credit risk reporting query — reduce from 45s to <5s | 📋 Backlog |
-| SLS-6 | Write data quality tests for core banking ingestion layer | 📋 Backlog |
+[View on Jira](https://snowflakecomputing.atlassian.net/jira/software/projects/SLS/boards)
 
 ## Repo Structure
 
