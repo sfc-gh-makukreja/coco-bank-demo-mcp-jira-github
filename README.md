@@ -7,8 +7,7 @@ SI delivery project for ANZ Banking Co.'s enterprise data platform on Snowflake.
 Migrating core banking data workloads to Snowflake, enabling real-time transaction analytics, regulatory compliance reporting, and AI-powered fraud detection.
 
 **Customer:** ANZ Banking Co. (fictitious)  
-**SI Partner:** Qrious (NZ)  
-**Platform:** Snowflake on AWS ap-southeast-2 (Sydney)
+**Platform:** Snowflake
 
 ## Sprint Board
 
